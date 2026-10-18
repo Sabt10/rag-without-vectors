@@ -1,0 +1,9 @@
+Ops runbook
+
+Release checklist:
+- Validate the feature flag is enabled only in staging.
+- Check the deployment window with the on-call team.
+- Confirm database migrations have been tested against production sized data.
+- Monitor the queue health for the first 20 minutes after rollout.
+
+If a rollback is needed, disable the feature flag and restore the previous build before restarting workers.

@@ -13,23 +13,50 @@ import os
 import sqlite3
 import sys
 from pathlib import Path
+from dotenv import load_dotenv
 
-DOCS_DIR = Path(__file__).parent / "docs"
+load_dotenv()
+
+BASE_DIR = Path(__file__).resolve().parent
+DOCS_DIR = BASE_DIR / "docs"
+DB_PATH = BASE_DIR / "rag_fts5.sqlite"
 TOP_K = 5
-
 
 # ---------- 1. Build the FTS5 index ----------
 
 def chunk_file(path: Path):
-    """Split a markdown file into chunks. Paragraph-level is fine here."""
     text = path.read_text(encoding="utf-8")
-    # Split on blank lines, drop empties, keep chunks reasonably sized.
-    chunks = [c.strip() for c in text.split("\n\n") if c.strip()]
-    return [(path.name, c) for c in chunks]
+    lines = text.splitlines()
+
+    chunks = []
+    current = []
+
+    for line in lines:
+        if line.startswith("#"):
+            if current:
+                chunks.append("\n".join(current).strip())
+                current = []
+            current.append(line)
+        else:
+            current.append(line)
+
+    if current:
+        chunks.append("\n".join(current).strip())
+
+    return [(path.name, c) for c in chunks if c]
+
+def iter_source_files():
+    return sorted(
+        path for path in DOCS_DIR.rglob("*")
+        if path.is_file() and path.suffix.lower() in {".md", ".txt"}
+    )
 
 
 def build_index() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    if DB_PATH.exists():
+        DB_PATH.unlink()
+
+    conn = sqlite3.connect(str(DB_PATH))
     conn.execute(
         "CREATE VIRTUAL TABLE chunks USING fts5("
         "  source,   "      # filename
@@ -39,12 +66,13 @@ def build_index() -> sqlite3.Connection:
     )
 
     rows = []
-    for path in sorted(DOCS_DIR.glob("*.md")):
+    source_files = iter_source_files()
+    for path in source_files:
         rows.extend(chunk_file(path))
 
     conn.executemany("INSERT INTO chunks (source, content) VALUES (?, ?)", rows)
     conn.commit()
-    print(f"[index] {len(rows)} chunks from {len(list(DOCS_DIR.glob('*.md')))} files", file=sys.stderr)
+    print(f"[index] {len(rows)} chunks from {len(source_files)} files", file=sys.stderr)
     return conn
 
 
@@ -64,7 +92,7 @@ def retrieve(conn: sqlite3.Connection, query: str, k: int = TOP_K):
     """
     try:
         rows = conn.execute(sql, (query, k)).fetchall()
-    except sqlite3.OperationalError as e:
+    except sqlite3.OperationalError:
         # FTS5 is picky about syntax (bare `AND`, `*`, etc.). Fall back to OR.
         safe = " OR ".join(t for t in query.split() if t.isalnum())
         rows = conn.execute(sql, (safe, k)).fetchall()
@@ -74,13 +102,19 @@ def retrieve(conn: sqlite3.Connection, query: str, k: int = TOP_K):
 # ---------- 3. Generate ----------
 
 def generate(query: str, chunks):
-    """Call an OpenAI-compatible endpoint. Keep it boring and replaceable."""
-    from openai import OpenAI  # imported lazily so --no-llm needs no install
+    """Call the Gemini Interactions API using the local docs as grounding context."""
+    try:
+        from google import genai
+    except ImportError as exc:
+        raise RuntimeError(
+            "Gemini support requires the 'google-genai' package. Install it with: pip install google-genai"
+        ) from exc
 
-    client = OpenAI(
-        api_key=os.environ["OPENAI_API_KEY"],
-        base_url=os.environ.get("OPENAI_BASE_URL"),  # optional
-    )
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        raise RuntimeError("GEMINI_API_KEY is not set. Set it before running the LLM mode.")
+
+    client = genai.Client(api_key=api_key)
 
     context = "\n\n".join(f"[{src}]\n{txt}" for src, txt, _ in chunks)
     prompt = (
@@ -90,12 +124,15 @@ def generate(query: str, chunks):
         f"Question: {query}"
     )
 
-    resp = client.chat.completions.create(
-        model=os.environ.get("MODEL", "gpt-4o-mini"),
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0,
+    interaction = client.interactions.create(
+        model=os.environ.get("MODEL", "gemini-3.8-flash"),
+        input=prompt,
     )
-    return resp.choices[0].message.content
+
+    if not hasattr(interaction, "output_text"):
+        raise RuntimeError("Gemini interaction did not return output_text.")
+
+    return interaction.output_text
 
 
 # ---------- 4. CLI ----------
@@ -112,7 +149,7 @@ def main():
 
     print(f"\n=== retrieved {len(chunks)} chunks ===")
     for src, txt, rank in chunks:
-        preview = txt.replace("\n", " ")[:120]
+        preview = txt.replace("\n", " ")
         print(f"  [{rank:+.3f}] {src}: {preview}...")
 
     if args.no_llm:
@@ -122,7 +159,10 @@ def main():
         return
 
     print("\n=== answer ===")
-    print(generate(args.query, chunks))
+    try:
+        print(generate(args.query, chunks))
+    except Exception as exc:
+        print(f"\n[llm error] {exc}", file=sys.stderr)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,10 @@
+Customer FAQ
+
+Q: When will the new dashboard be available?
+A: We are rolling it out in phases, starting with internal teams and then customer accounts that use the standard deployment path.
+
+Q: Will the update change permissions?
+A: Permissions remain compatible, but new access roles are visible in the admin panel to support the refreshed release workflow.
+
+Q: Do I need to do anything before the release?
+A: No action is required for most customers. If you use custom automation, review your schedule before the maintenance window.

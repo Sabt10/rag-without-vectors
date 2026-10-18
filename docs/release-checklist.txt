@@ -1,0 +1,13 @@
+Release checklist
+
+Before deployment:
+1. Confirm the build artifact and checksum.
+2. Validate migration scripts on staging.
+3. Review open alerts and recent incident summaries.
+4. Notify the support team of the planned window.
+
+After deployment:
+- Verify smoke tests pass.
+- Check latency and error rate.
+- Confirm the metrics dashboard reflects the new build.
+- Publish a short update to the customer-facing changelog.

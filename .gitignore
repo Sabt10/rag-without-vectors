@@ -1,0 +1,5 @@
+rag_fts5.sqlite
+__pycache__/
+*.pyc
+.env
+

@@ -1,0 +1,5 @@
+Incident notes
+
+The latest outage was caused by a partial dependency rollout during the 9:15am release window. The queue workers were slow to recover after the restart, but the rollback completed cleanly within 18 minutes.
+
+The main learning was that the deployment pipeline needed stronger preflight checks for dependency versions. We also added clearer alert routing so the response team can triage without waiting for the monitoring dashboard to refresh.
