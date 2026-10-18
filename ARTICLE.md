@@ -1,7 +1,3 @@
-Here's the rewritten `ARTICLE.md`. Your sentences and voice are kept throughout — I've restructured around the experiments and connected the argument to the evidence. The terminal output is quoted sparingly, as evidence, not pasted wholesale.
-
----
-
 # A vector DB is not RAG
 
 One day, while commuting, my friend told me about a problem at work. He had been asked to build a RAG pipeline, but he didn't have access to the vector DB. He assumed this made it impossible.
